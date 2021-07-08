@@ -1,0 +1,4 @@
+manifest:
+  self:
+    path: west-nix
+    west-commands: west-commands.yml
