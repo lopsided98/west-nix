@@ -1,0 +1,6 @@
+west-commands:
+  - file: west-nix.py
+    commands:
+      - name: nix
+        class: Nix
+        help: generate Nix code for fetching manifest sources
