@@ -1,13 +1,15 @@
+import hashlib
 import json
 import os
 import subprocess
+from pathlib import Path
 from textwrap import dedent
 from typing import Sequence
-import hashlib
 
 from west import log
 from west.commands import WestCommand
 from west.manifest import Manifest, Project
+from west.util import west_dir
 
 
 class Nix(WestCommand):
@@ -32,10 +34,12 @@ class Nix(WestCommand):
     def do_run(self, args, unknown_args):
         manifest: Manifest = self.manifest
 
-        manifest_dir = os.path.dirname(manifest.path)
-        west_nix_path = os.path.join(manifest_dir, "west.nix")
-        cache_path = os.path.join(manifest_dir, "west-nix-cache.json")
-        topdir_relative_to_manifest = os.path.relpath(manifest.topdir, manifest_dir)
+        manifest_path = Path(manifest.path)
+        manifest_dir = manifest_path.parent
+        west_nix_path = manifest_dir / "west.nix"
+        cache_path = Path(west_dir()) / "west-nix-cache.json"
+        topdir = Path(manifest.topdir)
+        topdir_relative_to_manifest = Path(os.path.relpath(topdir, manifest_dir))
 
         try:
             with open(cache_path) as cache_file:
@@ -45,7 +49,10 @@ class Nix(WestCommand):
         project_hashes = cache.setdefault("project_hashes", {})
 
         with open(west_nix_path, "w") as west_nix:
-            print('{ lib, fetchgit, linkFarm }: linkFarm "west-src" [', file=west_nix)
+            print(
+                '{ lib, linkFarm, fetchgit, writeText }: (linkFarm "west-workspace" [',
+                file=west_nix,
+            )
             for project in manifest.projects:
                 if project.url:
                     # Hash project data into a cache key
@@ -89,12 +96,29 @@ class Nix(WestCommand):
                             f"""
                             {{
                                 name = "{project.path}";
-                                path = "${{{os.path.join(topdir_relative_to_manifest, project.path)}}}";
+                                path = "${{{topdir_relative_to_manifest / project.path}}}";
                             }}"""
                         ),
                         file=west_nix,
                     )
-            print("]", file=west_nix)
+            # Create West config. Must not be a symlink to the store because
+            # West modifies it during the build.
+            print(
+                dedent(
+                    f"""
+                    ]).overrideAttrs ({{ buildCommand, ... }}: {{
+                        buildCommand = buildCommand + ''
+                            mkdir -p .west
+                            cat << EOF > .west/config
+                            [manifest]
+                            path = {manifest_dir.relative_to(topdir)}
+                            file = {manifest_path.relative_to(manifest_dir)}
+                            EOF
+                        '';
+                    }})"""
+                ),
+                file=west_nix,
+            )
 
             with open(cache_path, "w") as cache_file:
                 json.dump(cache, cache_file)
