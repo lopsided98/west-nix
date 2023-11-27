@@ -63,15 +63,15 @@ class Nix(WestCommand):
                     cache_key = cache_key.hexdigest()
 
                     # Find the source SHA256 using the cache or nix-prefetch-git
-                    sha256 = project_hashes.get(cache_key, {}).get("sha256")
-                    if sha256 is None:
+                    hash_str = project_hashes.get(cache_key, {}).get("hash")
+                    if hash_str is None:
                         prefetch = self._nix_prefetch_git(project.url, project.revision)
-                        sha256 = prefetch["sha256"]
+                        hash_str = prefetch["hash"]
                         project_hashes[cache_key] = {
                             # These attributes are just for informational purposes
                             "url": project.url,
                             "rev": project.revision,
-                            "sha256": sha256,
+                            "hash": hash_str,
                         }
 
                     print(
@@ -83,7 +83,7 @@ class Nix(WestCommand):
                                     url = "{project.url}";
                                     rev = "{project.revision}";
                                     branchName = "manifest-rev";
-                                    sha256 = "{sha256}";
+                                    hash = "{hash_str}";
                                     leaveDotGit = true;
                                 }};
                             }}"""
