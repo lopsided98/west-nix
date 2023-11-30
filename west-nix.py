@@ -54,6 +54,10 @@ class Nix(WestCommand):
                 file=west_nix,
             )
             for project in manifest.projects:
+                if not self.manifest.is_active(project):
+                    self.dbg(f'{project.name}: skipping inactive project')
+                    continue
+
                 if project.url:
                     # Hash project data into a cache key
                     cache_key = hashlib.sha256()
@@ -62,7 +66,7 @@ class Nix(WestCommand):
                     cache_key.update(b"manifest-rev")
                     cache_key = cache_key.hexdigest()
 
-                    # Find the source SHA256 using the cache or nix-prefetch-git
+                    # Find the source hash using the cache or nix-prefetch-git
                     hash_str = project_hashes.get(cache_key, {}).get("hash")
                     if hash_str is None:
                         prefetch = self._nix_prefetch_git(project.url, project.revision)
