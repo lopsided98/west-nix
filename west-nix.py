@@ -34,12 +34,17 @@ class Nix(WestCommand):
     def do_run(self, args, unknown_args):
         manifest: Manifest = self.manifest
 
-        manifest_path = Path(manifest.path)
+        # Path to the manifest YAML
+        manifest_path = Path(manifest.abspath)
+        # Repository directory containing the manifest
+        manifest_repo = Path(manifest.repo_abspath)
+        # Directory containing the manifest YAML. Normally the same as
+        # manifest_repo, but may be a subdirectory.
         manifest_dir = manifest_path.parent
         west_nix_path = manifest_dir / "west.nix"
         cache_path = Path(west_dir()) / "west-nix-cache.json"
         topdir = Path(manifest.topdir)
-        topdir_relative_to_manifest = Path(os.path.relpath(topdir, manifest_dir))
+        topdir_relative_to_manifest_dir = Path(os.path.relpath(topdir, manifest_dir))
 
         try:
             with open(cache_path) as cache_file:
@@ -100,7 +105,7 @@ class Nix(WestCommand):
                             f"""
                             {{
                                 name = "{project.path}";
-                                path = "${{{topdir_relative_to_manifest / project.path}}}";
+                                path = "${{{topdir_relative_to_manifest_dir / project.path}}}";
                             }}"""
                         ),
                         file=west_nix,
@@ -115,8 +120,8 @@ class Nix(WestCommand):
                             mkdir -p .west
                             cat << EOF > .west/config
                             [manifest]
-                            path = {manifest_dir.relative_to(topdir)}
-                            file = {manifest_path.relative_to(manifest_dir)}
+                            path = {manifest_repo.relative_to(topdir)}
+                            file = {manifest_path.relative_to(manifest_repo)}
                             EOF
                         '';
                     }})"""
