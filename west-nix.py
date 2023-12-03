@@ -27,7 +27,9 @@ class Nix(WestCommand):
         self._project_hashes = {}
 
     def do_add_parser(self, parser_adder):
-        parser = parser_adder.add_parser(self.name, help=self.help, description=self.description)
+        parser = parser_adder.add_parser(
+            self.name, help=self.help, description=self.description
+        )
 
         return parser
 
@@ -43,8 +45,12 @@ class Nix(WestCommand):
         manifest_dir = manifest_path.parent
         west_nix_path = manifest_dir / "west.nix"
         cache_path = Path(west_dir()) / "west-nix-cache.json"
-        topdir = Path(manifest.topdir)
-        topdir_relative_to_manifest_dir = Path(os.path.relpath(topdir, manifest_dir))
+        top_dir = Path(manifest.topdir)
+        top_dir_relative_to_manifest_dir = Path(os.path.relpath(top_dir, manifest_dir))
+
+        zephyr_base = os.environ.get("ZEPHYR_BASE")
+        if zephyr_base is not None:
+            zephyr_base = Path(zephyr_base)
 
         try:
             with open(cache_path) as cache_file:
@@ -55,12 +61,13 @@ class Nix(WestCommand):
 
         with open(west_nix_path, "w") as west_nix:
             print(
-                '{ lib, linkFarm, fetchgit, writeText }: (linkFarm "west-workspace" [',
+                '{ lib, linkFarm, fetchgit }: (linkFarm "west-workspace" [',
                 file=west_nix,
             )
+            zephyr_modules = []
             for project in manifest.projects:
                 if not self.manifest.is_active(project):
-                    self.dbg(f'{project.name}: skipping inactive project')
+                    self.dbg(f"{project.name}: skipping inactive project")
                     continue
 
                 if project.url:
@@ -93,7 +100,6 @@ class Nix(WestCommand):
                                     rev = "{project.revision}";
                                     branchName = "manifest-rev";
                                     hash = "{hash_str}";
-                                    leaveDotGit = true;
                                 }};
                             }}"""
                         ),
@@ -105,29 +111,38 @@ class Nix(WestCommand):
                             f"""
                             {{
                                 name = "{project.path}";
-                                path = "${{{topdir_relative_to_manifest_dir / project.path}}}";
+                                path = "${{{top_dir_relative_to_manifest_dir / project.path}}}";
                             }}"""
                         ),
                         file=west_nix,
                     )
-            # Create West config. Must not be a symlink to the store because
-            # West modifies it during the build.
-            print(
-                dedent(
-                    f"""
-                    ]).overrideAttrs ({{ buildCommand, ... }}: {{
-                        buildCommand = buildCommand + ''
-                            mkdir -p .west
-                            cat << EOF > .west/config
-                            [manifest]
-                            path = {manifest_repo.relative_to(topdir)}
-                            file = {manifest_path.relative_to(manifest_repo)}
-                            EOF
-                        '';
-                    }})"""
-                ),
-                file=west_nix,
-            )
+
+                if (Path(project.path) / "zephyr" / "module.yml").exists():
+                    zephyr_modules.append(project.path)
+
+            print("])", file=west_nix)
+
+            if zephyr_base is not None:
+                zephyr_base_placeholder = (
+                    '${placeholder "out"}' / zephyr_base.relative_to(top_dir)
+                )
+                zephyr_modules_placeholder = (
+                    f'${{placeholder "out"}}/{m}' for m in zephyr_modules
+                )
+                print(
+                    dedent(
+                        f"""
+                        .overrideAttrs ({{ buildCommand, ... }}: {{
+                            buildCommand = buildCommand + ''
+                                cat << EOF > .zephyr-env
+                                  export ZEPHYR_BASE='{zephyr_base_placeholder}'
+                                  export ZEPHYR_MODULES='{";".join(zephyr_modules_placeholder)}'
+                                EOF
+                            '';
+                        }})"""
+                    ),
+                    file=west_nix,
+                )
 
             with open(cache_path, "w") as cache_file:
                 json.dump(cache, cache_file)
@@ -142,7 +157,6 @@ class Nix(WestCommand):
                 rev,
                 "--branch-name",
                 "manifest-rev",
-                "--leave-dotGit",
                 "--quiet",
             ],
             capture_output=True,
