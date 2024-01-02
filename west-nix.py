@@ -144,8 +144,8 @@ class Nix(WestCommand):
                           ];
                           postBuild = ''
                             cat << EOF > "$out/.zephyr-env"
-                              export ZEPHYR_BASE='{zephyr_base_placeholder}'
-                              export ZEPHYR_MODULES='{";".join(zephyr_modules_placeholder)}'
+                              export ZEPHYR_BASE=${{lib.escapeShellArg "{zephyr_base_placeholder}"}}
+                              export ZEPHYR_MODULES=${{lib.escapeShellArg "{";".join(zephyr_modules_placeholder)}"}}
                             EOF
                           '';
                         }}"""
