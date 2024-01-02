@@ -154,7 +154,7 @@ class Nix(WestCommand):
                 )
 
             with open(cache_path, "w") as cache_file:
-                json.dump(cache, cache_file)
+                json.dump(cache, cache_file, indent=2)
 
     def _nix_prefetch_git(self, url, rev):
         result = subprocess.run(
