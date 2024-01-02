@@ -61,7 +61,18 @@ class Nix(WestCommand):
 
         with open(west_nix_path, "w") as west_nix:
             print(
-                '{ lib, linkFarm, fetchgit }: (linkFarm "west-workspace" [',
+                dedent(
+                    """
+                    { lib, runCommand, symlinkJoin, fetchgit }: let
+                      linkPath = { link, path }: runCommand "west-link" {} ''
+                        outLink="$out"/${lib.escapeShellArg link}
+                        mkdir -p "$(dirname "$outLink")"
+                        ln -s ${lib.escapeShellArg path} "$outLink"
+                      '';
+                    in symlinkJoin {
+                      name = "west-workspace";
+                      paths = ["""
+                ),
                 file=west_nix,
             )
             zephyr_modules = []
@@ -93,15 +104,15 @@ class Nix(WestCommand):
                     print(
                         dedent(
                             f"""
-                            {{
-                                name = "{project.path}";
+                            (linkPath {{
+                                link = "{project.path}";
                                 path = fetchgit {{
                                     url = "{project.url}";
                                     rev = "{project.revision}";
                                     branchName = "manifest-rev";
                                     hash = "{hash_str}";
                                 }};
-                            }}"""
+                            }})"""
                         ),
                         file=west_nix,
                     )
@@ -109,18 +120,16 @@ class Nix(WestCommand):
                     print(
                         dedent(
                             f"""
-                            {{
-                                name = "{project.path}";
+                            (linkPath {{
+                                link = "{project.path}";
                                 path = "${{{top_dir_relative_to_manifest_dir / project.path}}}";
-                            }}"""
+                            }})"""
                         ),
                         file=west_nix,
                     )
 
                 if (Path(project.path) / "zephyr" / "module.yml").exists():
                     zephyr_modules.append(project.path)
-
-            print("])", file=west_nix)
 
             if zephyr_base is not None:
                 zephyr_base_placeholder = (
@@ -132,14 +141,14 @@ class Nix(WestCommand):
                 print(
                     dedent(
                         f"""
-                        .overrideAttrs ({{ buildCommand, ... }}: {{
-                            buildCommand = buildCommand + ''
-                                cat << EOF > .zephyr-env
-                                  export ZEPHYR_BASE='{zephyr_base_placeholder}'
-                                  export ZEPHYR_MODULES='{";".join(zephyr_modules_placeholder)}'
-                                EOF
-                            '';
-                        }})"""
+                          ];
+                          postBuild = ''
+                            cat << EOF > "$out/.zephyr-env"
+                              export ZEPHYR_BASE='{zephyr_base_placeholder}'
+                              export ZEPHYR_MODULES='{";".join(zephyr_modules_placeholder)}'
+                            EOF
+                          '';
+                        }}"""
                     ),
                     file=west_nix,
                 )
