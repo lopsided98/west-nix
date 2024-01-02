@@ -24,7 +24,6 @@ class Nix(WestCommand):
                 for the manifest, stored in the Nix store."""
             ),
         )
-        self._project_hashes = {}
 
     def do_add_parser(self, parser_adder):
         parser = parser_adder.add_parser(
@@ -58,6 +57,11 @@ class Nix(WestCommand):
         except (FileNotFoundError, json.JSONDecodeError):
             cache = {}
         project_hashes = cache.setdefault("project_hashes", {})
+
+        # Only projects that are still included in the manifest are written back
+        # to the cache
+        new_cache = {}
+        new_project_hashes = new_cache.setdefault("project_hashes", {})
 
         with open(west_nix_path, "w") as west_nix:
             print(
@@ -94,12 +98,12 @@ class Nix(WestCommand):
                     if hash_str is None:
                         prefetch = self._nix_prefetch_git(project.url, project.revision)
                         hash_str = prefetch["hash"]
-                        project_hashes[cache_key] = {
-                            # These attributes are just for informational purposes
-                            "url": project.url,
-                            "rev": project.revision,
-                            "hash": hash_str,
-                        }
+                    new_project_hashes[cache_key] = {
+                        # These attributes are just for informational purposes
+                        "url": project.url,
+                        "rev": project.revision,
+                        "hash": hash_str,
+                    }
 
                     print(
                         dedent(
@@ -154,7 +158,7 @@ class Nix(WestCommand):
                 )
 
             with open(cache_path, "w") as cache_file:
-                json.dump(cache, cache_file, indent=2)
+                json.dump(new_cache, cache_file, indent=2)
 
     def _nix_prefetch_git(self, url, rev):
         result = subprocess.run(
