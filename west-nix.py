@@ -67,7 +67,7 @@ class Nix(WestCommand):
             print(
                 dedent(
                     """
-                    { lib, runCommand, symlinkJoin, fetchgit }: let
+                    { lib, runCommand, symlinkJoin, fetchgit, reccmd }: let
                       linkPath = { link, path }: runCommand "west-link" {} ''
                         outLink="$out"/${lib.escapeShellArg link}
                         mkdir -p "$(dirname "$outLink")"
@@ -115,6 +115,9 @@ class Nix(WestCommand):
                                     rev = "{project.revision}";
                                     branchName = "manifest-rev";
                                     hash = "{hash_str}";
+                                    postFetch = ''
+                                        ${{reccmd}}/bin/reccmd git --version
+                                    '';
                                 }};
                             }})"""
                         ),
@@ -135,27 +138,24 @@ class Nix(WestCommand):
                 if (Path(project.path) / "zephyr" / "module.yml").exists():
                     zephyr_modules.append(project.path)
 
-            if zephyr_base is not None:
-                zephyr_base_placeholder = (
-                    '${placeholder "out"}' / zephyr_base.relative_to(top_dir)
-                )
-                zephyr_modules_placeholder = (
-                    f'${{placeholder "out"}}/{m}' for m in zephyr_modules
-                )
-                print(
-                    dedent(
-                        f"""
-                          ];
-                          postBuild = ''
-                            cat << EOF > "$out/.zephyr-env"
-                              export ZEPHYR_BASE=${{lib.escapeShellArg "{zephyr_base_placeholder}"}}
-                              export ZEPHYR_MODULES=${{lib.escapeShellArg "{";".join(zephyr_modules_placeholder)}"}}
+            print(
+                dedent(
+                    f"""
+                        ];
+                        postBuild = ''
+                            mkdir -p "$out"/.west
+                            cat << EOF > "$out"/.west/config
+                            [manifest]
+                            path = {manifest_repo.relative_to(top_dir)}
+                            file = {manifest_path.relative_to(manifest_repo)}
+                            [zephyr]
+                            base = zephyr
                             EOF
-                          '';
-                        }}"""
-                    ),
-                    file=west_nix,
-                )
+                        '';
+                    }}"""
+                ),
+                file=west_nix,
+            )
 
             with open(cache_path, "w") as cache_file:
                 json.dump(new_cache, cache_file, indent=2)
