@@ -190,15 +190,31 @@ nativeBuildInputs = [ lndir ];
                 zephyr_base_placeholder = (
                     '${placeholder "out"}' / zephyr_base.relative_to(top_dir)
                 )
-                zephyr_modules_placeholder = (
-                    f'${{placeholder "out"}}/{m}' for m in zephyr_modules
+                zephyr_modules_placeholder = ";".join(
+                    (f'${{placeholder "out"}}/{m}' for m in zephyr_modules)
                 )
+
+                zephyr_env = {
+                    "ZEPHYR_BASE": zephyr_base_placeholder,
+                    "ZEPHYR_MODULES": zephyr_modules_placeholder,
+                }
+
+                zephyr_build_version = self._zephyr_build_version(zephyr_base)
+                if zephyr_build_version is not None:
+                    zephyr_env["ZEPHYR_BUILD_VERSION"] = zephyr_build_version
+
+                zephyr_env_script = "\n".join(
+                    (
+                        f'export {name}=${{lib.escapeShellArg "{value}"}}'
+                        for name, value in zephyr_env.items()
+                    )
+                )
+
                 print(
                     f"""
-    cat << EOF > "$out/.zephyr-env"
-    export ZEPHYR_BASE=${{lib.escapeShellArg "{zephyr_base_placeholder}"}}
-    export ZEPHYR_MODULES=${{lib.escapeShellArg "{";".join(zephyr_modules_placeholder)}"}}
-    EOF
+cat << EOF > "$out/.zephyr-env"
+{zephyr_env_script}
+EOF
 ''""",
                     file=west_nix,
                 )
@@ -222,3 +238,22 @@ nativeBuildInputs = [ lndir ];
             check=True,
         )
         return json.loads(result.stdout)
+
+    def _zephyr_build_version(self, zephyr_base):
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    zephyr_base,
+                    "describe",
+                    "--abbrev=12",
+                    "--always",
+                ],
+                capture_output=True,
+                check=True,
+            )
+            return result.stdout.decode("utf-8").strip()
+        except subprocess.CalledProcessError:
+            self.wrn("failed to get Zephyr version")
+            return None
